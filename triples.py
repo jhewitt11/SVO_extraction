@@ -50,7 +50,7 @@ text_file = ['theColourOutOfSpace.txt',
             'election2.txt',
             ]
 
-dict_file = '100622_news.json'
+dict_file = '11172022_news.json'
 
 samps = ['the fox ate dinner and breakfast.',
             'Although he was very busy with his work, Peter had had enough of it. He and his wife decided they needed a holiday. They travelled to Spain because they loved the country very much.',
