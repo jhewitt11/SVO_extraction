@@ -1,34 +1,30 @@
 import spacy
-
 import coreferee
 import  textacy
-import pandas as pd
 import json
 
 from tools import read_clean, read_dictionary
 
-
+# Coreferee custom attirbutes allow for coreference resolution. 
+# Input : spacy doc type
+# Output : new text string that has been resolved
 def coreference_resolver(doc):
 
-    # create list of tokens
     tok_list = [token.text for token in doc]
     
-    # resolve corefs
+    # resolve corefs   
     prev_shifts = 0
     for i, chain in enumerate(doc._.coref_chains):
     
-        #print(f'\nchain : {doc._.coref_chains[i].pretty_representation}')
+        # mention holds indices
+        # resolved holds strings        
         for mention in chain:
         
             resolved1 = [doc._.coref_chains.resolve(doc[i]) for i in mention]
             resolved = list(filter((None).__ne__, resolved1))
             
-            #print(f'mention : {mention} resolved : {resolved}')
-            
             if len(resolved) > 0:
             
-                # mention holds indices
-                # resolved holds strings
                 if len(resolved[0]) == 1:
                     tok_list[mention[0] + prev_shifts] = str(resolved[0][0])
                     
@@ -43,12 +39,55 @@ def coreference_resolver(doc):
     return " ".join(tok_list)
 
 
+# Simplify complex sentences
+# Input : spacy doc type
+# Output : simple sentence list
+def compound_to_simple(doc):
+
+    for token in doc:
+        if (token.dep_ == "ROOT"):
+            root_token = token
+            
+    other_verbs = []
+    for token in doc:
+        ancestors = list(token.ancestors)
+        if (token.pos_ == "VERB" and len(ancestors) < 3 and token != root_token):
+            other_verbs.append(token)
+            
+    token_spans = []
+    all_verbs = [root_token] + other_verbs
+    for other_verb in all_verbs:
+        first_token_index = len(doc)
+        last_token_index = 0
+        this_verb_children = list(other_verb.children)
+        for child in this_verb_children:
+            if (child not in all_verbs):
+                if (child.i < first_token_index):
+                    first_token_index = child.i
+                if (child.i > last_token_index):
+                    last_token_index = child.i
+        token_spans.append((first_token_index, last_token_index))
+        
+    sentence_clauses = []
+    for token_span in token_spans:
+        start = token_span[0]
+        end = token_span[1]
+        if (start < end):
+            clause = doc[start:end]
+            sentence_clauses.append(clause)
+    sentence_clauses = sorted(sentence_clauses, key=lambda tup: tup[0])
+    clauses_text = [clause.text for clause in sentence_clauses]
+    
+    return clauses_text
 
 # text input options
 text_file = ['theColourOutOfSpace.txt',
             'election.txt',
             'election2.txt',
             ]
+
+INPUT_DIRECTORY = 'texts\\'
+OUTPUT_DIRECTORY = 'results\\'
 
 dict_file = '11172022_news.json'
 
@@ -60,22 +99,17 @@ samps = ['the fox ate dinner and breakfast.',
             'the fox ate dinner and the swan ate lunch',
         ]
 
-
-
-    # USE news dictionary
-with open(dict_file) as infile:
+# Use news dictionary
+with open(INPUT_DIRECTORY + dict_file, encoding='utf-8') as infile:
     doc_dic = json.load(infile)
 
 headlines = [val for val in list(doc_dic.keys())]
 corpus = [value[1] for value in doc_dic.values()]
 
-headline = headlines[0]
-text = corpus[5]
-
-    # USE txt file
+# USE .txt file
 #text = read_clean(text_file[2])
 
-    # USE sample sentences
+# USE sample sentences
 #text = samps[1]
 
 
@@ -93,37 +127,40 @@ docs = list(model.pipe(corpus))
 resolved_corpus = [coreference_resolver(doc) for doc in docs]
 resolved_docs = list(model.pipe(resolved_corpus))
 
-# extract SVO triples
-#resolved_results = textacy.extract.triples.subject_verb_object_triples(resolved_docs)  
-normal_results = textacy.extract.triples.subject_verb_object_triples(docs) 
 
-'''
-print(
-        f'# of items in corpus : {len(corpus)}\n'
-        f'# of items in norm_results : {len(normal_results)}\n'
+#simplify sentences
+# document ->
+# -> list of docs
 
-    )
-'''
-#f'# of headlines : {len(list(headlines))}\n'
-#f'# of items in resolved_results : {len(resolved_results)}\n' 
+
+result_str = ''
 
 for i in range(len(headlines)):
     
-    # headline title
-    print(f'Headline : {headlines[i]}')
+    result_str += f'\nHeadline : {headlines[i]}\n\n'
+    result_str += f'Corpus : {corpus[i]}\n\n'
     
-    # text
-    print(f'Corpus : {corpus[i]}')
+    # simplify coref resolved results
+    simplified_docs = compound_to_simple(resolved_docs[i])
     
+    # SVO on simplified clauses
+    # note: SVO extraction requires doc
+    #resolved_results = textacy.extract.triples.subject_verb_object_triples(simplified_docs)
+    resolved_results = [textacy.extract.triples.subject_verb_object_triples(clause) for clause in simplified_docs]  
+    for clause_res in resolved_results:
+        for res in clause_res:
+            result_str += f'{str(res)}\n'
+
+    '''
+
     # normal SVO results
     normal_results = textacy.extract.triples.subject_verb_object_triples(docs[i]) 
     for res in normal_results:
-        print(res)
-    
-    print('\n')
+        result_str += f'{str(res)}\n'
+    '''
+    result_str += '\n\n'
 
-    # resolved SVO results
-    resolved_results = textacy.extract.triples.subject_verb_object_triples(resolved_docs[i])  
-    for res in resolved_results:
-        print(res)
-    
+output_file = 'results_stripfix.txt'
+
+with open(OUTPUT_DIRECTORY + output_file, 'w', encoding='utf-8') as f:
+    f.write(result_str)
