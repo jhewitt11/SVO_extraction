@@ -2,8 +2,17 @@ import spacy
 import coreferee
 import  textacy
 import json
+import cupy as cp
+import time
 
 from tools import read_clean, read_dictionary
+
+
+# 274.6 sec w GPU
+# 
+# Start time
+start = time.perf_counter()
+
 
 # Coreferee custom attirbutes allow for coreference resolution. 
 # Input : spacy doc type
@@ -80,16 +89,23 @@ def compound_to_simple(doc):
     
     return clauses_text
 
+
+spacy.require_gpu()
+
+INPUT_DIRECTORY = 'texts\\'
+OUTPUT_DIRECTORY = 'results\\'
+
 # text input options
 text_file = ['theColourOutOfSpace.txt',
             'election.txt',
             'election2.txt',
             ]
 
-INPUT_DIRECTORY = 'texts\\'
-OUTPUT_DIRECTORY = 'results\\'
+# file input / output details
+dict_file = '112122_news.json'
+dict_name = dict_file.split('.')[0]
+result_type = 'result_SVO'
 
-dict_file = '11172022_news.json'
 
 samps = ['the fox ate dinner and breakfast.',
             'Although he was very busy with his work, Peter had had enough of it. He and his wife decided they needed a holiday. They travelled to Spain because they loved the country very much.',
@@ -128,39 +144,43 @@ resolved_corpus = [coreference_resolver(doc) for doc in docs]
 resolved_docs = list(model.pipe(resolved_corpus))
 
 
-#simplify sentences
-# document ->
-# -> list of docs
-
-
 result_str = ''
-
 for i in range(len(headlines)):
     
     result_str += f'\nHeadline : {headlines[i]}\n\n'
     result_str += f'Corpus : {corpus[i]}\n\n'
     
     # simplify coref resolved results
-    simplified_docs = compound_to_simple(resolved_docs[i])
-    
+    simplified_texts = compound_to_simple(resolved_docs[i])
+    simplified_docs = list(model.pipe(simplified_texts))
+
+
     # SVO on simplified clauses
     # note: SVO extraction requires doc
     #resolved_results = textacy.extract.triples.subject_verb_object_triples(simplified_docs)
-    resolved_results = [textacy.extract.triples.subject_verb_object_triples(clause) for clause in simplified_docs]  
-    for clause_res in resolved_results:
-        for res in clause_res:
+    resolved_results = [textacy.extract.triples.subject_verb_object_triples(doc) for doc in simplified_docs]  
+    
+    for clause in resolved_results:
+        for res in clause:
             result_str += f'{str(res)}\n'
 
-    '''
-
+    
+    result_str += '\nno coref, no simplified SVO results\n\n'
     # normal SVO results
     normal_results = textacy.extract.triples.subject_verb_object_triples(docs[i]) 
     for res in normal_results:
         result_str += f'{str(res)}\n'
-    '''
+    
     result_str += '\n\n'
 
-output_file = 'results_stripfix.txt'
 
-with open(OUTPUT_DIRECTORY + output_file, 'w', encoding='utf-8') as f:
+# Computation finish time
+comp_finish  = time.perf_counter()
+print(f'Elapsed time : {comp_finish-start:0.2f}')
+
+with open(OUTPUT_DIRECTORY + dict_name + result_type + '.txt', 'w', encoding='utf-8') as f:
     f.write(result_str)
+
+# Finish time
+finish  = time.perf_counter()
+print(f'Elapsed time : {finish-start:0.2f}')
